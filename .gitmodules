@@ -1,0 +1,9 @@
+[submodule "src/ptebase"]
+	path = src/ptebase
+	url = git@bitbucket.org:m-ochi/ptebase.git
+[submodule "src/aliasmethod"]
+	path = src/aliasmethod
+	url = git@github.com:m-ochi/aliasmethod.git
+[submodule "src/cmdline"]
+	path = src/cmdline
+	url = git@github.com:tanakh/cmdline.git
