@@ -31,31 +31,12 @@ public:
     void run();
 
 private:
-    static std::unique_ptr<EmbeddedVector> emb_all;
-//    static std::unique_ptr<EmbeddedVector> emb_all_wl;
-//    static double alpha;
+    static std::unique_ptr<EmbeddedVector> emb_all_wd;
+    static std::unique_ptr<EmbeddedVector> emb_all_wl;
+    static double alpha;
 
     static void trainD3NEThread(int id);
 
-    static void* learnVector(
-            Network* network_each,
-            EmbeddedVector* emb_each,
-            Samplers* sampler_each,
-            Network* network_all_a,
-            EmbeddedVector* emb_all_a,
-            int start_idx,
-            int end_idx,
-            uint64_t seed
-    );
-
-    static void update(
-            std::vector<real>& vec_u,
-            std::vector<real>& vec_v,
-            std::vector<real>& vec_error,
-            int learn_dim,
-            int label);
-
-    /*
     static void* learnVector_ww(
             Network* network_wd_a, EmbeddedVector* emb_wd_a,
             Network* network_wl_a, EmbeddedVector* emb_wl_a,
@@ -73,7 +54,6 @@ private:
             std::vector<real>& vec_error_wl,
             double* error_alpha,
             int label);
-    */
 
     void output(std::string mode);
 };

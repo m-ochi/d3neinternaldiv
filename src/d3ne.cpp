@@ -4,10 +4,10 @@
 
 #include "d3ne.h"
 
-//double D3NE::alpha;
+double D3NE::alpha;
 
-std::unique_ptr<EmbeddedVector> D3NE::emb_all;
-//std::unique_ptr<EmbeddedVector> D3NE::emb_all_wl;
+std::unique_ptr<EmbeddedVector> D3NE::emb_all_wd;
+std::unique_ptr<EmbeddedVector> D3NE::emb_all_wl;
 
 D3NE::D3NE(
     std::string ww_net_a, 
@@ -77,11 +77,12 @@ void D3NE::run() {
     sampler_wd = std::unique_ptr<Samplers>(new Samplers(network_wd.get()));
     sampler_wl = std::unique_ptr<Samplers>(new Samplers(network_wl.get()));
 
-    // embeddingの作成(concat modelの場合wwはdim x2の次元数)
-    emb_ww  = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_ww->num_vertices,  this->constant_settings->dim*2));
+    // embeddingの作成
+    emb_ww  = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_ww->num_vertices,  this->constant_settings->dim));
     emb_wd  = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_wd->num_vertices,  this->constant_settings->dim));
     emb_wl  = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_wl->num_vertices,  this->constant_settings->dim));
-    emb_all = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_all->num_vertices, this->constant_settings->dim*2));
+    emb_all_wd = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_all->num_vertices, this->constant_settings->dim));
+    emb_all_wl = std::unique_ptr<EmbeddedVector>(new EmbeddedVector(network_all->num_vertices, this->constant_settings->dim));
 
     sigmoid = std::unique_ptr<Sigmoid>(new Sigmoid());
 
@@ -90,10 +91,10 @@ void D3NE::run() {
 //    std::cout << "DEBUG -2" << std::endl;
 
     // init alpha
-//    std::random_device rd;
-//    std::mt19937 mt(rd());
-//    std::uniform_real_distribution<double> r_uni(0, 1.0);
-//    alpha = r_uni(mt);
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_real_distribution<double> r_uni(0, 1.0);
+    alpha = r_uni(mt);
 
 //    std::cout << "DEBUG -1" << std::endl;
 
@@ -123,14 +124,14 @@ void D3NE::run() {
 
     std::cout << "Total time: " << (double)(finish - start) / CLOCKS_PER_SEC << std::endl;
 
-//    std::cout << "trained alpha: " << alpha << std::endl;
+    std::cout << "trained alpha: " << alpha << std::endl;
 
 //    std::cout<<"DEBUG 3"<<std::endl;
 
     this->output("_wd");
 //    std::cout<<"DEBUG 4"<<std::endl;
     this->output("_wl");
-    this->output("_all");
+    this->output("_ww");
 
 //    std::cout<<"DEBUG END"<<std::endl;
 }
@@ -180,20 +181,19 @@ void D3NE::trainD3NEThread(int id) {
         EmbeddedVector* e_ww = emb_ww.get();
         EmbeddedVector* e_wd = emb_wd.get();
         EmbeddedVector* e_wl = emb_wl.get();
-        EmbeddedVector* e_all = emb_all.get();
-
+        EmbeddedVector* e_all_wd = emb_all_wd.get();
+        EmbeddedVector* e_all_wl = emb_all_wl.get();
         Samplers* s_ww = sampler_ww.get();
         Samplers* s_wd = sampler_wd.get();
         Samplers* s_wl = sampler_wl.get();
 //        std::cout<<"DEBUG 0-3"<<std::endl;
 
-//        learnVector_ww(n_wd, e_wd, n_wl, e_wl, s_ww, n_ww, n_all, e_all_wd, e_all_wl, seed);
+        learnVector_ww(n_wd, e_wd, n_wl, e_wl, s_ww, n_ww, n_all, e_all_wd, e_all_wl, seed);
 //        std::cout<<"DEBUG 0-4"<<std::endl;
-        learnVector(n_wd, e_wd, s_wd, n_all, e_all, 0, constant_settings->dim, seed);
+        learnVector(n_wd, e_wd, s_wd, n_all, e_all_wd, seed);
 //        std::cout<<"DEBUG 0-5"<<std::endl;
-        learnVector(n_wl, e_wl, s_wl, n_all, e_all, constant_settings->dim, constant_settings->dim*2, seed);
+        learnVector(n_wl, e_wl, s_wl, n_all, e_all_wl, seed);
 //        std::cout<<"DEBUG 0-6"<<std::endl;
-        learnVector(n_ww, e_ww, s_ww, n_all, e_all, 0, constant_settings->dim*2, seed);
 
         count++;
 
@@ -201,172 +201,6 @@ void D3NE::trainD3NEThread(int id) {
 }
 
 
-void* D3NE::learnVector(
-    Network*         network_each,
-    EmbeddedVector*  emb_each,
-    Samplers*        sampler_each,
-    Network*         network_all_a,
-    EmbeddedVector*  emb_all_a,
-    int start_idx,
-    int end_idx,
-    uint64_t seed
-) {
-
-    int64_t curedge;
-    int64_t s_id;
-    int64_t t_id;
-    std::string s_name;
-    std::string t_name;
-
-    int64_t s_all_id;
-    int64_t t_all_id;
-    std::string s_all_name;
-    std::string t_all_name;
-
-//    std::cout << "DEBUG 1-4-START Im D3NE-learn" << std::endl;
-    int learn_dim = end_idx - start_idx;
-    std::vector<real> vec_error(learn_dim);
-
-
-    // edgeサンプリング（エッジのWeightに比例する形でAliasTableを利用してサンプリング）
-    // for ww network
-    curedge = sampler_each->edgeSampling();
-    s_id    = network_each->edges[curedge]->source_id;
-    t_id    = network_each->edges[curedge]->target_id;
-
-//    std::cout << "DEBUG 1-4-1" << std::endl;
-
-    //s_idとt_idをランダムに入れ替える仕様に変更してみる
-    std::random_device rd;
-    std::mt19937 mt(rd());
-    std::uniform_real_distribution<double> r_uni(0, 1.0);
-    double rand = r_uni(mt);
-    if(rand<0.5) {
-        int64_t tmp_id = s_id;
-        s_id = t_id;
-        t_id = tmp_id;
-    }
-//    std::cout << "DEBUG 1-4-2" << std::endl;
-
-    s_name  = network_each->vertices[s_id]->name;
-    t_name  = network_each->vertices[t_id]->name;
-//    std::cout << "s_name:: " << s_name << std::endl;
-//    std::cout << "t_name:: " << t_name << std::endl;
-
-    s_all_id    = network_all_a->searchHashTable(s_name);
-    t_all_id    = network_all_a->searchHashTable(t_name);
-    s_all_name  = network_all_a->vertices[s_all_id]->name;
-    t_all_name  = network_all_a->vertices[t_all_id]->name;
-//    std::cout << "DEBUG 1-4-3" << std::endl;
-
-    // copy latest emb_all to emb_each
-    for (int c = 0; c != learn_dim; c++) {
-        emb_each->vertex[s_id][c] = emb_all_a->vertex[s_all_id][start_idx+c];
-    }
-//    std::cout << "DEBUG 1-4-4" << std::endl;
-
-    // vec_error, vec_error_allを０で初期化
-    for (int c = 0; c != learn_dim; c++) {
-        vec_error[c] = 0;
-//        vec_error_all[c] = 0;
-    }
-//    std::cout << "DEBUG 1-4-5" << std::endl;
-
-    int64_t target;
-    int64_t label;
-    // NEGATIVE SAMPLING
-    for (int d = 0; d != constant_settings->negative + 1; d++) {
-//        std::cout << "DEBUG 1-4-" << d << std::endl;
-        if (d == 0) {
-            target = t_id;
-            label = 1;
-        } else {
-            target = sampler_each->negativeVertexSampling(seed);
-            t_name = network_each->vertices[target]->name;
-            t_all_id = network_all->searchHashTable(t_name);
-            label = 0;
-
-        }
-//        std::cout << "DEBUG 1-4-" << d << "-1" <<std::endl;
-
-        // copy latest emb_all to emb_each
-        for (int c = 0; c != learn_dim; c++) {
-            emb_each->vertex[target][c]     = emb_all_a->vertex[t_all_id][start_idx+c];
-            emb_each->context[target][c]    = emb_all_a->context[t_all_id][start_idx+c];
-        }
-//        std::cout << "DEBUG 1-4-" << d << "-2" <<std::endl;
-
-        // 更新
-        if (constant_settings->order == 1) {
-            update(emb_each->vertex[s_id], emb_each->vertex[target], vec_error, learn_dim, label);
-            for (int c = 0; c != learn_dim; c++) {
-                emb_all_a->vertex[t_all_id][start_idx+c] = emb_each->vertex[target][c];
-            }
-        }
-//        std::cout << "DEBUG 1-4-" << d << "-3" <<std::endl;
-
-        if (constant_settings->order == 2) {
-            update(emb_each->vertex[s_id], emb_each->context[target], vec_error, learn_dim, label);
-            for (int c = 0; c != learn_dim; c++) {
-                emb_all_a->context[t_all_id][start_idx+c] = emb_each->context[target][c];
-            }
-        }
-//        std::cout << "DEBUG 1-4-" << d << "-4" <<std::endl;
-
-    }
-
-    for (int c = 0; c != learn_dim; c++) {
-        // original LINE code is mistaken perhaps, change + to -.
-        emb_each->vertex[s_id][c] -= vec_error[c];
-        emb_all_a->vertex[s_all_id][start_idx+c] = emb_each->vertex[s_id][c];
-//        std::cout << "vec_error[" << c << "]:" << vec_error[c] << std::endl;
-//        std::cout << "vec_error_all[" << c << "]:" << vec_error_all[c] << std::endl;
-    }
-//    std::cout << "DEBUG 1-4-END" << std::endl;
-}
-
-
-/* Update embeddings */
-void D3NE::update(std::vector<real>& vec_u, std::vector<real>& vec_v, std::vector<real>& vec_error, int learn_dim, int label) {
-    // update の式にw_ijのエッジの重みがついてないのは,サンプルを繰り返すうちに重みの分の比で更新されていくという発想だと思われる.
-    real x = 0;
-    real g;
-
-//    std::cout << "DEBUG 1-4-0-3-1 Im D3NE update!" <<std::endl;
-
-    //内積の計算
-    for (int c = 0; c != learn_dim; c++) {
-//        std::cout << "vec_u[c]:" << vec_u[c] <<std::endl;
-//        std::cout << "vec_v[c]:" << vec_v[c] <<std::endl;
-        x += vec_u[c] * vec_v[c];
-    }
-//    std::cout << "DEBUG 1-4-0-3-2" <<std::endl;
-//    std::cout << "label:" << label <<std::endl;
-//    std::cout << "x:" << x <<std::endl;
-//    std::cout << "sig(x):" << sigmoid->fastFunc(x) <<std::endl;
-//    std::cout << "cur_rho:" << cur_rho <<std::endl;
-
-    g = - (label - sigmoid->fastFunc(x)) * cur_rho;
-//    std::cout << "DEBUG 1-4-0-3-2-1" <<std::endl;
-    for (int c = 0; c != learn_dim; c++) {
-//        std::cout << "DEBUG 1-4-0-3-2-1-"<<c <<std::endl;
-        vec_error[c] += g * vec_v[c];
-//        std::cout << "g*vec_v[" << c << "]:" << g*vec_v[c] << std::endl;
-    }
-//    std::cout << "DEBUG 1-4-0-3-3" <<std::endl;
-
-//    std::cout << "tmp vec_error" << std::endl;
-//    disp_vec(vec_error);
-
-    for (int c = 0; c != learn_dim; c++) {
-        vec_v[c] -= g * vec_u[c];
-//        std::cout << "g*vec_u[" << c << "]:" << g*vec_u[c] << std::endl;
-    }
-//    std::cout << "DEBUG 1-4-0-3-4" <<std::endl;
-}
-
-
-/*
 void* D3NE::learnVector_ww(
     Network* network_wd_a, EmbeddedVector* emb_wd_a,
     Network* network_wl_a, EmbeddedVector* emb_wl_a,
@@ -507,10 +341,8 @@ void* D3NE::learnVector_ww(
 //        std::cout << "vec_error_all[" << c << "]:" << vec_error_all[c] << std::endl;
     }
 }
-*/
 
 /* Update embeddings */
-/*
 void D3NE::update_ww(
         std::vector<real>& vec_u_wd, std::vector<real>& vec_v_wd,
         std::vector<real>& vec_u_wl, std::vector<real>& vec_v_wl,
@@ -559,7 +391,6 @@ void D3NE::update_ww(
 //        std::cout << "g*vec_u[" << c << "]:" << g*vec_u[c] << std::endl;
     }
 }
-*/
 
 void D3NE::output(std::string mode) {
     std::string outputfile = this->constant_settings->outputfile + mode;
@@ -569,37 +400,28 @@ void D3NE::output(std::string mode) {
         std::string name = this->network_all->vertices[i]->name;
         fprintf(fo, "%s ", name.c_str());
         if (this->constant_settings->binary) {
-
-            if (mode=="_wd") {
-                for (int j = 0; j < this->constant_settings->dim; j++) {
-                    fwrite(&emb_all->vertex[i][j], sizeof(real), 1, fo);
-                }
-            } else if (mode=="_wl") {
-                for (int j = 0; j < this->constant_settings->dim; j++) {
-                    fwrite(&emb_all->vertex[i][this->constant_settings->dim+j], sizeof(real), 1, fo);
-                }
-            } else {
-                for (int j = 0; j < this->constant_settings->dim*2; j++) {
-                    fwrite(&emb_all->vertex[i][j], sizeof(real), 1, fo);
+            for (int j = 0; j < this->constant_settings->dim; j++) {
+                if (mode=="_wd") {
+                    fwrite(&emb_all_wd->vertex[i][j], sizeof(real), 1, fo);
+                } else if (mode=="_wl") {
+                    fwrite(&emb_all_wl->vertex[i][j], sizeof(real), 1, fo);
+//                } else if (mode=="_ww") {
+                } else {
+//                    fwrite(&emb_all_wd->vertex[i][j] + &emb_all_wl->vertex[i][j], sizeof(real), 1, fo);
                 }
             }
 
         } else {
-
-            if (mode=="_wd") {
-                for (int j = 0; j < this->constant_settings->dim; j++) {
-                    fprintf(fo, "%lf ", emb_all->vertex[i][j]);
-                }
-            } else if (mode=="_wl") {
-                for (int j = 0; j < this->constant_settings->dim; j++) {
-                    fprintf(fo, "%lf ", emb_all->vertex[i][this->constant_settings->dim+j]);
-                }
-            } else {
-                for (int j = 0; j < this->constant_settings->dim*2; j++) {
-                    fprintf(fo, "%lf ", emb_all->vertex[i][j]);
+            for (int j = 0; j < this->constant_settings->dim; j++) {
+                if (mode=="_wd") {
+                    fprintf(fo, "%lf ", emb_all_wd->vertex[i][j]);
+                } else if (mode=="_wl") {
+                    fprintf(fo, "%lf ", emb_all_wl->vertex[i][j]);
+//                } else if (mode=="_ww") {
+                } else {
+                    fprintf(fo, "%lf ", emb_all_wl->vertex[i][j]+emb_all_wl->vertex[i][j]);
                 }
             }
-
         }
 
         fprintf(fo, "\n");
