@@ -3,6 +3,7 @@
 
 ##### Topic
 - D3NE method with internally dividing version.
+- This is the implimentation of the paper "Geospatial Area Embedding Based on the Movement Purpose Hypothesis Using Large-Scale Mobility Data from Smart Card."
 
 ##### Introduction
 - This method uses three network graphs.
